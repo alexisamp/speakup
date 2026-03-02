@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #030712;
+  color: #f9fafb;
+}
+
+/* Smooth scrollbar for heatmap */
+.heatmap-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #374151 transparent;
+}
+.heatmap-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+.heatmap-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.heatmap-scroll::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 2px;
+}
