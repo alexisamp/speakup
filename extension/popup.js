@@ -1,7 +1,7 @@
 // popup.js — partner selector + opens SpeakUp with context
 
 // ✏️ Change this to your production URL when deploying
-const APP_URL = "https://speakup-alexisamp.vercel.app";
+const APP_URL = "https://speakup-kappa.vercel.app";
 
 let pageContext = "";
 let selectedDisc = null;
