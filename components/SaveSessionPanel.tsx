@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getUserKey } from "@/lib/userKey";
+import { getAgentUuid } from "@/lib/syncAgents";
 import type { SessionEndData } from "./ConversationPanel";
+import PronunciationReplay from "./PronunciationReplay";
 
 interface Props extends SessionEndData {
   onSaved: () => void;
@@ -21,6 +23,11 @@ export default function SaveSessionPanel({
   fluencyNotes,
   phrasesToPractice,
   focusNextSession,
+  partnerDisc,
+  partnerName,
+  partnerVoiceId,
+  topicSelected,
+  contextInput,
   onSaved,
   onDiscard,
 }: Props) {
@@ -37,6 +44,7 @@ export default function SaveSessionPanel({
     setError(null);
 
     const today = new Date().toISOString().split("T")[0];
+    const agentUuid = partnerDisc ? getAgentUuid(partnerDisc) : undefined;
 
     const { error: err } = await supabase.from("sessions").insert({
       user_key: userKey,
@@ -51,6 +59,11 @@ export default function SaveSessionPanel({
       fluency_notes: fluencyNotes ?? null,
       phrases_to_practice: phrasesToPractice?.length ? phrasesToPractice : null,
       focus_next_session: focusNextSession ?? null,
+      agent_id: agentUuid ?? null,
+      partner_name: partnerName ?? null,
+      partner_disc: partnerDisc ?? null,
+      topic_selected: topicSelected ?? null,
+      context_input: contextInput ?? null,
     });
 
     if (err) {
@@ -93,7 +106,18 @@ export default function SaveSessionPanel({
   return (
     <div className="w-full space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-white font-semibold text-lg">Session complete</h3>
+        <div>
+          <h3 className="text-white font-semibold text-lg">Session complete</h3>
+          {partnerName && partnerDisc && (
+            <p className="text-gray-500 text-xs mt-0.5">
+              with{" "}
+              <span className="text-gray-400">
+                {partnerDisc === "D" ? "🔴" : partnerDisc === "I" ? "🟡" : partnerDisc === "S" ? "🟢" : "🔵"}{" "}
+                {partnerName}
+              </span>
+            </p>
+          )}
+        </div>
         <span className="text-gray-500 text-sm">{duration} min</span>
       </div>
 
@@ -119,6 +143,14 @@ export default function SaveSessionPanel({
             </div>
           )}
         </div>
+      )}
+
+      {/* Pronunciation Replay */}
+      {pronunciationNotes && partnerVoiceId && (
+        <PronunciationReplay
+          pronunciationNotes={pronunciationNotes}
+          voiceId={partnerVoiceId}
+        />
       )}
 
       {/* Phrases to practice */}

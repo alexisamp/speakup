@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getUserKey } from "@/lib/userKey";
+import { PARTNERS } from "@/lib/partners";
 import { LineChart, Line } from "recharts";
 
 interface PhraseItem {
@@ -21,6 +22,8 @@ interface Session {
   fluency_notes: string | null;
   phrases_to_practice: PhraseItem[] | null;
   focus_next_session: string | null;
+  partner_disc: string | null;
+  partner_name: string | null;
   created_at: string;
 }
 
@@ -30,6 +33,11 @@ function scoreChipColor(score: number | null) {
   if (score <= 6) return "bg-yellow-900/50 text-yellow-300 border-yellow-800/50";
   if (score <= 8) return "bg-green-900/50 text-green-300 border-green-800/50";
   return "bg-emerald-900/50 text-emerald-300 border-emerald-800/50";
+}
+
+function getPartnerEmoji(disc: string | null): string {
+  if (!disc) return "";
+  return PARTNERS.find((p) => p.disc === disc)?.emoji ?? "";
 }
 
 export default function SessionHistory({ refreshKey }: { refreshKey: number }) {
@@ -54,7 +62,7 @@ export default function SessionHistory({ refreshKey }: { refreshKey: number }) {
       supabase
         .from("sessions")
         .select(
-          "id, session_date, score, duration_minutes, raw_feedback, pronunciation_notes, fluency_notes, phrases_to_practice, focus_next_session, created_at"
+          "id, session_date, score, duration_minutes, raw_feedback, pronunciation_notes, fluency_notes, phrases_to_practice, focus_next_session, partner_disc, partner_name, created_at"
         )
         .eq("user_key", userKey)
         .order("session_date", { ascending: false })
@@ -108,7 +116,6 @@ export default function SessionHistory({ refreshKey }: { refreshKey: number }) {
     );
   }
 
-  // Sparkline: last 14 sessions in ascending order
   const sparkData = sessions
     .slice(0, 14)
     .reverse()
@@ -165,10 +172,13 @@ export default function SessionHistory({ refreshKey }: { refreshKey: number }) {
           const isOpen = expanded.has(session.id);
           const date = new Date(session.session_date + "T00:00:00");
           const dateStr = date.toLocaleDateString("en-US", {
-            weekday: "short",
             month: "short",
             day: "numeric",
           });
+          const partnerEmoji = getPartnerEmoji(session.partner_disc);
+          const partnerLabel = session.partner_name
+            ? `${partnerEmoji} ${session.partner_name}`
+            : null;
           const preview = session.raw_feedback
             ? session.raw_feedback
                 .split("\n")
@@ -189,6 +199,10 @@ export default function SessionHistory({ refreshKey }: { refreshKey: number }) {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {partnerLabel && (
+                      <span className="text-gray-400 text-xs font-medium">{partnerLabel}</span>
+                    )}
+                    {partnerLabel && <span className="text-gray-700">·</span>}
                     <span className="text-gray-300 text-sm font-medium">{dateStr}</span>
                     <span className="text-xs bg-gray-700/60 text-gray-400 px-2 py-0.5 rounded-full border border-gray-600/50">
                       {session.duration_minutes} min

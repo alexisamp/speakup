@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpeakUp</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      background: #111827;
+      color: #f9fafb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      padding: 16px;
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    #page-title {
+      font-size: 12px;
+      color: #6b7280;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 16px;
+      min-height: 32px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #4b5563;
+      margin-bottom: 8px;
+    }
+
+    .partners {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .partner-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #374151;
+      background: #1f2937;
+      cursor: pointer;
+      color: #d1d5db;
+      font-size: 13px;
+      font-weight: 500;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: left;
+    }
+
+    .partner-btn:hover {
+      background: #263144;
+      border-color: #4b5563;
+    }
+
+    .partner-btn.selected {
+      background: #1e1b4b;
+      border-color: #6366f1;
+      color: #fff;
+    }
+
+    .partner-btn .disc-D { color: #ef4444; }
+    .partner-btn .disc-I { color: #f59e0b; }
+    .partner-btn .disc-S { color: #22c55e; }
+    .partner-btn .disc-C { color: #3b82f6; }
+
+    #open-btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: none;
+      background: #4f46e5;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #open-btn:hover:not(:disabled) {
+      background: #6366f1;
+    }
+
+    #open-btn:disabled {
+      background: #1f2937;
+      color: #4b5563;
+      cursor: not-allowed;
+    }
+
+    #status {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 8px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>SpeakUp</h1>
+  <div id="page-title">Loading page…</div>
+
+  <p class="section-label">Who are you talking to?</p>
+  <div class="partners">
+    <button class="partner-btn" data-disc="D">
+      <span class="disc-D">🔴</span> Jordan
+    </button>
+    <button class="partner-btn" data-disc="I">
+      <span class="disc-I">🟡</span> Sam
+    </button>
+    <button class="partner-btn" data-disc="S">
+      <span class="disc-S">🟢</span> Alex
+    </button>
+    <button class="partner-btn" data-disc="C">
+      <span class="disc-C">🔵</span> Morgan
+    </button>
+  </div>
+
+  <button id="open-btn" disabled>Select a partner to start →</button>
+  <p id="status"></p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -9,9 +9,11 @@ interface Props {
   topicContext: string;
   onStart: (sessionContext: string) => void;
   onBack: () => void;
+  fromExtension?: boolean;
+  initialContext?: string;
 }
 
-export default function PreSessionBrief({ topic, topicContext, onStart, onBack }: Props) {
+export default function PreSessionBrief({ topic, topicContext, onStart, onBack, fromExtension, initialContext }: Props) {
   const [focusNote, setFocusNote] = useState<string | null>(null);
   const [topVocab, setTopVocab] = useState<{
     original: string;
@@ -19,7 +21,7 @@ export default function PreSessionBrief({ topic, topicContext, onStart, onBack }
     times_seen: number;
   } | null>(null);
   const [streak, setStreak] = useState<number>(0);
-  const [contextInput, setContextInput] = useState("");
+  const [contextInput, setContextInput] = useState(initialContext ?? "");
   const [urlTitle, setUrlTitle] = useState<string | null>(null);
   const [fetchingUrl, setFetchingUrl] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -193,6 +195,14 @@ export default function PreSessionBrief({ topic, topicContext, onStart, onBack }
         <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 text-center">
           <p className="text-gray-300 text-sm font-medium">First session! Just speak freely.</p>
           <p className="text-gray-600 text-xs mt-1">No pressure — relax and have a natural conversation.</p>
+        </div>
+      )}
+
+      {/* Extension context banner */}
+      {fromExtension && (
+        <div className="flex items-center gap-2 bg-indigo-950/40 border border-indigo-800/40 rounded-xl p-3">
+          <span className="text-base">📖</span>
+          <span className="text-indigo-300 text-sm">Context loaded from Chrome extension</span>
         </div>
       )}
 

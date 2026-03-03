@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import ConversationPanel, { type SessionEndData } from "@/components/ConversationPanel";
 import SaveSessionPanel from "@/components/SaveSessionPanel";
 import Heatmap from "@/components/Heatmap";
-import TopicSelector from "@/components/TopicSelector";
+import TopicSelector, { type Topic } from "@/components/TopicSelector";
 import PreSessionBrief from "@/components/PreSessionBrief";
 import SessionHistory from "@/components/SessionHistory";
 import VocabularyView from "@/components/VocabularyView";
 import { supabase } from "@/lib/supabase";
 import { getUserKey } from "@/lib/userKey";
+import { PARTNERS, type Partner } from "@/lib/partners";
+import { syncAgents } from "@/lib/syncAgents";
 
 type AppView = "topic" | "brief" | "session" | "save";
 type ActiveTab = "practice" | "history" | "vocabulary";
@@ -22,11 +24,14 @@ interface SelectedTopic {
 export default function Home() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("practice");
   const [view, setView] = useState<AppView>("topic");
+  const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<SelectedTopic | null>(null);
   const [sessionContext, setSessionContext] = useState("");
   const [sessionData, setSessionData] = useState<SessionEndData | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [streak, setStreak] = useState<number>(0);
+  const [fromExtension, setFromExtension] = useState(false);
+  const [extensionContext, setExtensionContext] = useState("");
 
   const fetchStreak = useCallback(async () => {
     const userKey = getUserKey();
@@ -66,16 +71,32 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetchStreak();
-  }, [fetchStreak, refreshKey]);
+    // Sync agents to Supabase (non-blocking)
+    syncAgents().catch(console.error);
 
-  function handleTopicSelect(topic: {
-    emoji: string;
-    title: string;
-    description: string;
-    context: string;
-  }) {
+    // Handle URL params from Chrome extension
+    const params = new URLSearchParams(window.location.search);
+    const ctxParam = params.get("context");
+    const partnerParam = params.get("partner");
+    if (ctxParam && partnerParam) {
+      const partner = PARTNERS.find((p) => p.disc === partnerParam);
+      if (partner) {
+        setSelectedPartner(partner);
+        setSelectedTopic({ title: "Free flow", context: "" });
+        setExtensionContext(ctxParam);
+        setFromExtension(true);
+        setView("brief");
+      }
+    }
+
+    fetchStreak();
+  }, [fetchStreak]);
+
+  function handleStart(partner: Partner, topic: Topic) {
+    setSelectedPartner(partner);
     setSelectedTopic({ title: topic.title, context: topic.context });
+    setFromExtension(false);
+    setExtensionContext("");
     setView("brief");
   }
 
@@ -91,12 +112,20 @@ export default function Home() {
 
   function handleSaved() {
     setSessionData(null);
+    setSelectedPartner(null);
+    setSelectedTopic(null);
+    setFromExtension(false);
+    setExtensionContext("");
     setView("topic");
     setRefreshKey((k) => k + 1);
   }
 
   function handleDiscard() {
     setSessionData(null);
+    setSelectedPartner(null);
+    setSelectedTopic(null);
+    setFromExtension(false);
+    setExtensionContext("");
     setView("topic");
   }
 
@@ -114,8 +143,15 @@ export default function Home() {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
               SpeakUp
-              {streak > 0 && (
-                <span className="text-base font-normal text-orange-400">🔥 {streak}</span>
+              {view === "session" && selectedPartner ? (
+                <span className="text-base font-normal text-gray-300">
+                  {streak > 0 && <span className="text-orange-400">🔥 {streak} </span>}
+                  | {selectedPartner.emoji} {selectedPartner.name}
+                </span>
+              ) : (
+                streak > 0 && (
+                  <span className="text-base font-normal text-orange-400">🔥 {streak}</span>
+                )
               )}
             </h1>
             <p className="text-gray-500 text-sm mt-0.5">English speaking practice</p>
@@ -142,24 +178,26 @@ export default function Home() {
         {/* Practice tab */}
         {activeTab === "practice" && (
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 md:p-8">
-            {view === "topic" && (
-              <TopicSelector
-                onSelect={handleTopicSelect}
-                selected={selectedTopic?.title}
-              />
-            )}
+            {view === "topic" && <TopicSelector onStart={handleStart} />}
             {view === "brief" && selectedTopic && (
               <PreSessionBrief
                 topic={selectedTopic.title}
                 topicContext={selectedTopic.context}
                 onStart={handleBriefStart}
-                onBack={() => setView("topic")}
+                onBack={() => {
+                  setFromExtension(false);
+                  setExtensionContext("");
+                  setView("topic");
+                }}
+                fromExtension={fromExtension}
+                initialContext={extensionContext || undefined}
               />
             )}
-            {view === "session" && selectedTopic && (
+            {view === "session" && selectedTopic && selectedPartner && (
               <ConversationPanel
                 topic={selectedTopic.title}
                 context={sessionContext}
+                partner={selectedPartner}
                 onSessionEnd={handleSessionEnd}
               />
             )}

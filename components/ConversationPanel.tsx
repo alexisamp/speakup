@@ -2,6 +2,7 @@
 
 import { useConversation } from "@elevenlabs/react";
 import { useRef, useState, useEffect, useCallback } from "react";
+import type { Partner } from "@/lib/partners";
 
 interface PhraseItem {
   original: string;
@@ -20,11 +21,17 @@ export interface SessionEndData {
   fluencyNotes?: string;
   phrasesToPractice?: PhraseItem[];
   focusNextSession?: string;
+  partnerDisc?: string;
+  partnerName?: string;
+  partnerVoiceId?: string;
+  topicSelected?: string;
+  contextInput?: string;
 }
 
 interface Props {
   topic: string;
   context: string;
+  partner: Partner;
   onSessionEnd: (data: SessionEndData) => void;
 }
 
@@ -107,7 +114,7 @@ async function fetchConversationData(convId: string): Promise<{
   }
 }
 
-export default function ConversationPanel({ topic, context, onSessionEnd }: Props) {
+export default function ConversationPanel({ topic, context, partner, onSessionEnd }: Props) {
   const [isActive, setIsActive] = useState(false);
   const [endPhase, setEndPhase] = useState<EndPhase>("idle");
   const [micState, setMicState] = useState<"unknown" | "granted" | "denied">("unknown");
@@ -160,7 +167,7 @@ export default function ConversationPanel({ topic, context, onSessionEnd }: Prop
       if (context) dynamicVars.context = context;
 
       const convId = await conversation.startSession({
-        agentId: process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID!,
+        agentId: partner.agentId || process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID!,
         connectionType: "webrtc",
         ...(Object.keys(dynamicVars).length > 0 && { dynamicVariables: dynamicVars }),
       });
@@ -208,6 +215,11 @@ export default function ConversationPanel({ topic, context, onSessionEnd }: Prop
           conversationId: convId,
           transcript: apiData.transcript,
           rawFeedback: apiData.rawFeedback,
+          partnerDisc: partner.disc,
+          partnerName: partner.name,
+          partnerVoiceId: partner.voiceId,
+          topicSelected: topic,
+          contextInput: context,
         };
       } else {
         sessionData = {
@@ -215,6 +227,11 @@ export default function ConversationPanel({ topic, context, onSessionEnd }: Prop
           notes: "",
           duration: Math.max(1, Math.round(capturedElapsed / 60)),
           conversationId: convId,
+          partnerDisc: partner.disc,
+          partnerName: partner.name,
+          partnerVoiceId: partner.voiceId,
+          topicSelected: topic,
+          contextInput: context,
         };
       }
     } else {
@@ -222,6 +239,11 @@ export default function ConversationPanel({ topic, context, onSessionEnd }: Prop
         score: undefined,
         notes: "",
         duration: Math.max(1, Math.round(capturedElapsed / 60)),
+        partnerDisc: partner.disc,
+        partnerName: partner.name,
+        partnerVoiceId: partner.voiceId,
+        topicSelected: topic,
+        contextInput: context,
       };
     }
 
@@ -315,7 +337,7 @@ export default function ConversationPanel({ topic, context, onSessionEnd }: Prop
 
       {!isActive && (
         <p className="text-gray-600 text-sm text-center max-w-xs">
-          {topic ? `Topic: ${topic.split("—")[0].trim()}` : "Choose a topic to start"}
+          {partner.emoji} {partner.name} · {topic ? topic.split("—")[0].trim() : "Free flow"}
         </p>
       )}
     </div>
