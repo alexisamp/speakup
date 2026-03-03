@@ -174,7 +174,7 @@ export default function PreSessionBrief({ topic, topicContext, onStart, onBack, 
           )}
           {focusNote && (
             <div className="bg-indigo-950/40 border border-indigo-800/40 rounded-xl p-3">
-              <p className="text-xs text-indigo-400 font-medium mb-1">Today's focus</p>
+              <p className="text-xs text-indigo-400 font-medium mb-1">Today&apos;s focus</p>
               <p className="text-gray-200 text-sm">{focusNote}</p>
             </div>
           )}

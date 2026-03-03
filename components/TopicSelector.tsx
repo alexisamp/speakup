@@ -98,7 +98,7 @@ export default function TopicSelector({ onStart }: Props) {
       {/* Topic grid */}
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-          What's the topic?
+          What&apos;s the topic?
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {TOPICS.map((topic) => {
