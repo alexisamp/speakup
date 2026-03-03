@@ -120,7 +120,7 @@ export default function ConversationPanel({ topic, context, partner, onSessionEn
   const [micState, setMicState] = useState<"unknown" | "granted" | "denied">("unknown");
   const [elapsed, setElapsed] = useState(0);
 
-  const convIdRef = useRef<string | undefined>();
+  const convIdRef = useRef<string | undefined>(undefined);
   const startTimeRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
