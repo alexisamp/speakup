@@ -8,6 +8,7 @@ interface DayData {
   date: string;
   score: number | null;
   notes: string | null;
+  duration_minutes: number | null;
 }
 
 interface TooltipState {
@@ -17,7 +18,7 @@ interface TooltipState {
 }
 
 function scoreColor(score: number | null): string {
-  if (score === null) return "#1f2937"; // dark gray for no session (dark mode)
+  if (score === null) return "#1f2937";
   if (score <= 4) return "#ffb3b3";
   if (score <= 6) return "#ffd700";
   if (score <= 8) return "#90ee90";
@@ -39,14 +40,16 @@ function calcStreak(map: Map<string, DayData>): number {
   today.setHours(0, 0, 0, 0);
   const d = new Date(today);
 
-  // If today has no session, start check from yesterday
-  if (!map.has(d.toISOString().split("T")[0])) {
+  const todayKey = d.toISOString().split("T")[0];
+  const todayEntry = map.get(todayKey);
+  if (!todayEntry || (todayEntry.duration_minutes ?? 0) < 10) {
     d.setDate(d.getDate() - 1);
   }
 
   while (true) {
     const key = d.toISOString().split("T")[0];
-    if (map.has(key)) {
+    const entry = map.get(key);
+    if (entry && (entry.duration_minutes ?? 0) >= 10) {
       streak++;
       d.setDate(d.getDate() - 1);
     } else {
@@ -60,7 +63,12 @@ function avgScore(map: Map<string, DayData>, days: number): number | null {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const scores = [...map.values()]
-    .filter((d) => new Date(d.date) >= cutoff && d.score !== null)
+    .filter(
+      (d) =>
+        new Date(d.date) >= cutoff &&
+        d.score !== null &&
+        (d.duration_minutes ?? 0) >= 10
+    )
     .map((d) => d.score as number);
   if (!scores.length) return null;
   return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
@@ -80,20 +88,21 @@ export default function Heatmap({ refreshKey }: { refreshKey: number }) {
 
     supabase
       .from("sessions")
-      .select("session_date, score, notes, created_at")
+      .select("session_date, score, notes, duration_minutes, created_at")
       .eq("user_key", userKey)
       .gte("session_date", cutoff.toISOString().split("T")[0])
       .order("created_at", { ascending: false })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) console.error("Heatmap load failed:", error);
         if (!data) return;
         const map = new Map<string, DayData>();
         for (const s of data) {
-          // Keep only the most-recent session per day (first seen, desc order)
           if (!map.has(s.session_date)) {
             map.set(s.session_date, {
               date: s.session_date,
               score: s.score,
               notes: s.notes,
+              duration_minutes: s.duration_minutes,
             });
           }
         }
@@ -111,15 +120,17 @@ export default function Heatmap({ refreshKey }: { refreshKey: number }) {
     d.setDate(d.getDate() - i);
     const key = d.toISOString().split("T")[0];
     const session = dayMap.get(key);
-    days.push({ date: key, score: session?.score ?? null, notes: session?.notes ?? null });
+    days.push({
+      date: key,
+      score: session?.score ?? null,
+      notes: session?.notes ?? null,
+      duration_minutes: session?.duration_minutes ?? null,
+    });
   }
 
   // Pad to start on Sunday
   const firstDayOfWeek = new Date(days[0].date + "T00:00:00").getDay();
-  const padded: (DayData | null)[] = [
-    ...Array(firstDayOfWeek).fill(null),
-    ...days,
-  ];
+  const padded: (DayData | null)[] = [...Array(firstDayOfWeek).fill(null), ...days];
 
   // Group into weeks
   const weeks: (DayData | null)[][] = [];
@@ -137,10 +148,9 @@ export default function Heatmap({ refreshKey }: { refreshKey: number }) {
       if (m !== lastMonth) {
         monthLabels.push({
           weekIdx: wi,
-          label: new Date(first.date + "T00:00:00").toLocaleDateString(
-            "en-US",
-            { month: "short" }
-          ),
+          label: new Date(first.date + "T00:00:00").toLocaleDateString("en-US", {
+            month: "short",
+          }),
         });
         lastMonth = m;
       }
@@ -154,10 +164,7 @@ export default function Heatmap({ refreshKey }: { refreshKey: number }) {
   const CELL = 11;
   const GAP = 3;
 
-  function handleMouseEnter(
-    e: React.MouseEvent<HTMLDivElement>,
-    day: DayData
-  ) {
+  function handleMouseEnter(e: React.MouseEvent<HTMLDivElement>, day: DayData) {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, data: day });
@@ -252,7 +259,6 @@ export default function Heatmap({ refreshKey }: { refreshKey: number }) {
                       height: CELL,
                       borderRadius: 2,
                       backgroundColor: day ? scoreColor(day.score) : "transparent",
-                      cursor: day ? "default" : "default",
                       opacity: day ? 1 : 0,
                     }}
                     onMouseEnter={day ? (e) => handleMouseEnter(e, day) : undefined}
@@ -281,6 +287,9 @@ export default function Heatmap({ refreshKey }: { refreshKey: number }) {
             {tooltip.data.score !== null ? (
               <>
                 <div className="text-white">Score: {tooltip.data.score}/10</div>
+                {tooltip.data.duration_minutes && (
+                  <div className="text-gray-500">{tooltip.data.duration_minutes} min</div>
+                )}
                 {tooltip.data.notes && (
                   <div className="text-gray-400 mt-1 leading-relaxed">
                     {tooltip.data.notes.length > 100
@@ -311,6 +320,7 @@ export default function Heatmap({ refreshKey }: { refreshKey: number }) {
           />
         ))}
         <span>High</span>
+        <span className="ml-2 text-gray-600">· streak counts sessions ≥ 10 min</span>
       </div>
     </div>
   );

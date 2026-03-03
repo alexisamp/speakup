@@ -3,20 +3,32 @@
 import { useConversation } from "@elevenlabs/react";
 import { useRef, useState, useEffect, useCallback } from "react";
 
-interface Message {
-  message: string;
-  source: "ai" | "user";
+interface PhraseItem {
+  original: string;
+  better: string;
+  category: string;
 }
 
 export interface SessionEndData {
   score: number | undefined;
   notes: string;
   duration: number;
+  conversationId?: string;
+  transcript?: string;
+  rawFeedback?: string;
+  pronunciationNotes?: string;
+  fluencyNotes?: string;
+  phrasesToPractice?: PhraseItem[];
+  focusNextSession?: string;
 }
 
 interface Props {
+  topic: string;
+  context: string;
   onSessionEnd: (data: SessionEndData) => void;
 }
+
+type EndPhase = "idle" | "waiting" | "fetching";
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -24,48 +36,93 @@ function formatTime(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function extractScoreAndNotes(messages: Message[]) {
-  const feedbackMsg = [...messages]
-    .reverse()
-    .find((m) => m.source === "ai" && /score/i.test(m.message));
+function parseFeedback(text: string): Omit<SessionEndData, "duration" | "conversationId" | "transcript" | "notes"> {
+  const scoreMatch = text.match(/[Ss]core[:\s]+(\d+)/);
+  const score = scoreMatch ? Math.min(10, Math.max(1, parseInt(scoreMatch[1]))) : undefined;
 
-  if (feedbackMsg) {
-    const match = feedbackMsg.message.match(/score[:\s]+(\d+)/i);
-    const score = match
-      ? Math.min(10, Math.max(1, parseInt(match[1])))
-      : undefined;
-    return { score, notes: feedbackMsg.message };
+  const pronMatch = text.match(/[Pp]ronunciation[:\s]+([\s\S]*?)(?=\n[A-Z]|Fluency|Phrases|Focus|$)/);
+  const pronunciationNotes = pronMatch?.[1]?.trim().replace(/\n+/g, " ") || undefined;
+
+  const fluencyMatch = text.match(/[Ff]luency[:\s]+([\s\S]*?)(?=\n[A-Z]|Pronunciation|Phrases|Focus|$)/);
+  const fluencyNotes = fluencyMatch?.[1]?.trim().replace(/\n+/g, " ") || undefined;
+
+  const phrasesSection = text.match(/[Pp]hrases[^:\n]*:([\s\S]*?)(?=Focus|$)/);
+  const phrasesToPractice: PhraseItem[] = [];
+  if (phrasesSection) {
+    const lines = phrasesSection[1].split("\n");
+    for (const line of lines) {
+      const m = line.match(/["']?([^"'→\-\n]+?)["']?\s*[→\-]+\s*["']?([^"'\n]+)["']?/);
+      if (m && m[1].trim() && m[2].trim()) {
+        phrasesToPractice.push({
+          original: m[1].trim(),
+          better: m[2].trim(),
+          category: "general",
+        });
+      }
+    }
   }
 
-  const lastAi = [...messages].reverse().find((m) => m.source === "ai");
-  return { score: undefined, notes: lastAi?.message ?? "" };
+  const focusMatch = text.match(/[Ff]ocus[^:\n]*next[^:\n]*:[:\s]*([\s\S]*?)(?=\n\n|$)/);
+  const focusNextSession = focusMatch?.[1]?.trim().replace(/\n+/g, " ") || undefined;
+
+  return { score, pronunciationNotes, fluencyNotes, phrasesToPractice, focusNextSession };
 }
 
-export default function ConversationPanel({ onSessionEnd }: Props) {
+async function fetchConversationData(convId: string): Promise<{
+  transcript: string;
+  rawFeedback: string;
+  durationSecs: number;
+} | null> {
+  try {
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/convai/conversations/${convId}`,
+      {
+        headers: {
+          "xi-api-key": process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY!,
+        },
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const transcriptArr: { role: string; message: string }[] = data.transcript ?? [];
+    const transcript = transcriptArr
+      .map((t) => `${t.role === "agent" ? "Alex" : "You"}: ${t.message}`)
+      .join("\n");
+
+    // Find last agent message containing "SESSION FEEDBACK" or "Score"
+    const feedbackMsg = [...transcriptArr]
+      .reverse()
+      .find(
+        (t) =>
+          t.role === "agent" &&
+          (t.message.includes("SESSION FEEDBACK") || /[Ss]core[:\s]+\d+/.test(t.message))
+      );
+    const rawFeedback = feedbackMsg?.message ?? transcriptArr[transcriptArr.length - 1]?.message ?? "";
+
+    const durationSecs = data.metadata?.call_duration_secs ?? 0;
+    return { transcript, rawFeedback, durationSecs };
+  } catch {
+    return null;
+  }
+}
+
+export default function ConversationPanel({ topic, context, onSessionEnd }: Props) {
   const [isActive, setIsActive] = useState(false);
-  const [isEnding, setIsEnding] = useState(false);
-  const [micState, setMicState] = useState<"unknown" | "granted" | "denied">(
-    "unknown"
-  );
+  const [endPhase, setEndPhase] = useState<EndPhase>("idle");
+  const [micState, setMicState] = useState<"unknown" | "granted" | "denied">("unknown");
   const [elapsed, setElapsed] = useState(0);
 
-  const messagesRef = useRef<Message[]>([]);
+  const convIdRef = useRef<string | undefined>();
   const startTimeRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const conversation = useConversation({
-    onMessage: useCallback(
-      ({ message, source }: { message: string; source: "ai" | "user" }) => {
-        messagesRef.current.push({ message, source });
-      },
-      []
-    ),
     onError: useCallback((msg: string) => {
       console.error("ElevenLabs error:", msg);
     }, []),
   });
 
-  // Check mic permission on mount
   useEffect(() => {
     navigator.permissions
       ?.query({ name: "microphone" as PermissionName })
@@ -78,7 +135,6 @@ export default function ConversationPanel({ onSessionEnd }: Props) {
       .catch(() => setMicState("unknown"));
   }, []);
 
-  // Timer — reset and start when session becomes active
   useEffect(() => {
     if (isActive) {
       startTimeRef.current = Date.now();
@@ -97,12 +153,18 @@ export default function ConversationPanel({ onSessionEnd }: Props) {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       setMicState("granted");
-      messagesRef.current = [];
       setElapsed(0);
-      await conversation.startSession({
+
+      const dynamicVars: Record<string, string> = {};
+      if (topic) dynamicVars.topic = topic;
+      if (context) dynamicVars.context = context;
+
+      const convId = await conversation.startSession({
         agentId: process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID!,
         connectionType: "webrtc",
+        ...(Object.keys(dynamicVars).length > 0 && { dynamicVariables: dynamicVars }),
       });
+      convIdRef.current = convId;
       setIsActive(true);
     } catch (err) {
       if (err instanceof Error && err.name === "NotAllowedError") {
@@ -113,43 +175,84 @@ export default function ConversationPanel({ onSessionEnd }: Props) {
   }
 
   async function handleEnd() {
-    setIsEnding(true);
-    try {
-      conversation.sendUserMessage("end session");
-      // Wait 10 s for the agent to deliver feedback
-      await new Promise((r) => setTimeout(r, 10_000));
-    } finally {
-      await conversation.endSession();
-      setIsActive(false);
-      setIsEnding(false);
+    const capturedElapsed = elapsed;
+    setEndPhase("waiting");
 
-      const duration = Math.max(1, Math.round(elapsed / 60));
-      const { score, notes } = extractScoreAndNotes(messagesRef.current);
-      onSessionEnd({ score, notes, duration });
+    // Let agent deliver feedback
+    conversation.sendUserMessage("end session");
+    await new Promise((r) => setTimeout(r, 10_000));
+
+    // End the WebRTC connection
+    setEndPhase("fetching");
+    await conversation.endSession();
+    setIsActive(false);
+
+    // Wait for ElevenLabs to finalize transcript
+    await new Promise((r) => setTimeout(r, 3_000));
+
+    // Fetch full conversation data from API
+    const convId = convIdRef.current;
+    let sessionData: SessionEndData;
+
+    if (convId) {
+      const apiData = await fetchConversationData(convId);
+      if (apiData) {
+        const durationMin = apiData.durationSecs > 0
+          ? Math.max(1, Math.round(apiData.durationSecs / 60))
+          : Math.max(1, Math.round(capturedElapsed / 60));
+        const parsed = parseFeedback(apiData.rawFeedback);
+        sessionData = {
+          ...parsed,
+          notes: apiData.rawFeedback,
+          duration: durationMin,
+          conversationId: convId,
+          transcript: apiData.transcript,
+          rawFeedback: apiData.rawFeedback,
+        };
+      } else {
+        sessionData = {
+          score: undefined,
+          notes: "",
+          duration: Math.max(1, Math.round(capturedElapsed / 60)),
+          conversationId: convId,
+        };
+      }
+    } else {
+      sessionData = {
+        score: undefined,
+        notes: "",
+        duration: Math.max(1, Math.round(capturedElapsed / 60)),
+      };
     }
+
+    setEndPhase("idle");
+    onSessionEnd(sessionData);
   }
 
-  const statusLabel = isEnding
-    ? "Getting feedback…"
-    : conversation.isSpeaking
-    ? "Alex is speaking…"
-    : "Listening…";
+  const statusLabel =
+    endPhase === "waiting"
+      ? "Waiting for feedback…"
+      : endPhase === "fetching"
+      ? "Getting your feedback…"
+      : conversation.isSpeaking
+      ? "Alex is speaking…"
+      : "Listening…";
+
+  const isEnding = endPhase !== "idle";
 
   return (
     <div className="flex flex-col items-center gap-6 w-full">
-      {/* Mic permission banner */}
       {micState === "denied" && (
         <div className="w-full bg-red-950 border border-red-800 rounded-xl p-3 text-red-400 text-sm text-center">
-          Microphone access denied — enable it in browser settings to continue.
+          Microphone access denied — enable it in browser settings.
         </div>
       )}
       {micState === "unknown" && !isActive && (
         <div className="w-full bg-yellow-950 border border-yellow-800 rounded-xl p-3 text-yellow-400 text-sm text-center">
-          Microphone permission is required to start a conversation.
+          Microphone permission required to start.
         </div>
       )}
 
-      {/* Live status */}
       {isActive && (
         <div className="flex flex-col items-center gap-2">
           <div className="flex items-center gap-2">
@@ -167,21 +270,21 @@ export default function ConversationPanel({ onSessionEnd }: Props) {
           <span className="text-4xl font-mono font-bold tabular-nums text-white">
             {formatTime(elapsed)}
           </span>
+          {elapsed < 600 && !isEnding && (
+            <span className="text-xs text-gray-600">
+              {Math.ceil((600 - elapsed) / 60)} min left to qualify for streak
+            </span>
+          )}
         </div>
       )}
 
-      {/* Primary button */}
       {!isActive ? (
         <button
           onClick={handleStart}
           disabled={micState === "denied"}
-          className="group relative w-36 h-36 rounded-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 flex flex-col items-center justify-center"
+          className="w-36 h-36 rounded-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 flex flex-col items-center justify-center"
         >
-          <svg
-            className="w-12 h-12 text-white mb-1"
-            fill="currentColor"
-            viewBox="0 0 24 24"
-          >
+          <svg className="w-12 h-12 text-white mb-1" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.49 6-3.3 6-6.72h-1.7z" />
           </svg>
           <span className="text-white text-sm font-medium">Start</span>
@@ -195,15 +298,13 @@ export default function ConversationPanel({ onSessionEnd }: Props) {
           {isEnding ? (
             <>
               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin mb-1" />
-              <span className="text-white text-xs">Wait…</span>
+              <span className="text-white text-xs text-center px-2 leading-tight">
+                {endPhase === "fetching" ? "Fetching…" : "Wait…"}
+              </span>
             </>
           ) : (
             <>
-              <svg
-                className="w-9 h-9 text-white mb-1"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-9 h-9 text-white mb-1" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 6h12v12H6z" />
               </svg>
               <span className="text-white text-sm font-medium">End</span>
@@ -214,7 +315,7 @@ export default function ConversationPanel({ onSessionEnd }: Props) {
 
       {!isActive && (
         <p className="text-gray-600 text-sm text-center max-w-xs">
-          Press Start to begin your speaking session with Alex, your AI coach.
+          {topic ? `Topic: ${topic.split("—")[0].trim()}` : "Choose a topic to start"}
         </p>
       )}
     </div>
